@@ -1,40 +1,25 @@
-# AlphaToe
+# AlphaToe: Q-Learning practice
 
 import numpy as np
 import random
 
 
 class Environment():
-    """A tic-tac-toe board defined in RL terms"""
+    """A tic-tac-toe board in RL terms"""
 
-    def __init__(self, turn, state=np.zeros((3, 3))):
-        """Setup a 3 x 3 board as an array and specify who's going first
-        1 ~ X, -1 ~ O, 0 ~ ''
-        """
-        self.state = state
-        self.turn = turn
+    def __init__(self):
+        """Setup a 3 x 3 board as an array: 1 ~ X, -1 ~ O, 0 ~ empty"""
+        self.state = np.zeros((3, 3))
 
     def reset(self):
         """Resets to empty"""
         self.state = np.zeros((3, 3))
 
     def get_state(self):
-        """Return the current state"""
+        """Get the current state"""
         return self.state
 
-    def set_state(self, state):
-        """Set the current state"""
-        self.state = state
-
-    def get_turn(self):
-        """Return who's turn it is (+/- 1 for X/O)"""
-        return self.turn
-
-    def set_turn(self, turn):
-        """Set who's turn it is"""
-        self.turn = turn
-
-    def display(self, state=None):
+    def display(self):
         """
             0   1   2
           *---*---*---*
@@ -45,117 +30,128 @@ class Environment():
         2 | X |   | O |
           *---*---*---*
         """
-        if state is None: state = self.state
         to_txt = {0: ' ', 1: 'X', -1: 'O'}
         print('    0   1   2')
         print('  *---*---*---*')
         for row in range(3):
             row_str = '{} | '.format(row)
             for col in range(3):
-                mark = state[row, col]
+                mark = self.state[row, col]
                 row_str += '{} | '.format(to_txt[mark])
             print(row_str)
             print('  *---*---*---*')
 
-    def is_full(self, state=None):
+    def is_full(self):
         """Checks if the board is full"""
-        if state is None: state = self.state
         for row in range(3):
             for col in range(3):
-                if state[row, col] == 0: # Any empty space
+                if self.state[row, col] == 0: # Any empty space
                     return False
         return True
 
-    def get_actions(self, state=None):
-        """Return a list of actions that can be taken in the given state, i.e.
-        the indices of empty spaces (row, col)
-        """
-        if state is None: state = self.state
+    def get_actions(self, mark):
+        """A list of actions that the player can take, i.e. empty spaces (row, col, mark)"""
+        assert mark in [1, -1], 'Mark not recognized'
         actions = []
         for row in range(3):
             for col in range(3):
-                if state[row, col] == 0:
-                    actions.append((row, col))
+                if self.state[row, col] == 0:
+                    actions.append((row, col, mark))
         return actions
 
-    def get_rewards(self, state=None):
-        """Return rewards for each player given the state (X reward, O reward)"""
-        if state is None: state = self.state
+    def get_rewards(self, mark):
+        """Return rewards for the player given the current state"""
+        assert mark in [1, -1], 'Mark not recognized'
+        goal = 3 * mark
         for i in range(3):
-            this_row_sum = np.sum(state[i, :])
-            this_col_sum = np.sum(state[:, i])
-            if this_row_sum == 3 or this_col_sum == 3: return 1, -1
-            if this_row_sum == -3 or this_col_sum == -3: return -1, 1
-        diag1_sum = np.trace(state)
-        diag2_sum = np.trace(np.fliplr(state))
-        if diag1_sum == 3 or diag2_sum == 3: return 1, -1
-        if diag1_sum == -3 or diag2_sum == -3: return -1, 1
-        return 0, 0
+            row_sum = np.sum(self.state[i, :])
+            col_sum = np.sum(self.state[:, i])
+            if row_sum == goal or col_sum == goal: return 1
+            if row_sum == -goal or col_sum == -goal: return -1
+        diag1_sum = np.trace(self.state)
+        diag2_sum = np.trace(np.fliplr(self.state))
+        if diag1_sum == goal or diag2_sum == goal: return 1
+        if diag1_sum == -goal or diag2_sum == -goal: return -1
+        return 0
 
     def step(self, action):
-        """Perform an action and return the new state and any rewards"""
-        assert self.state[action[0], action[1]] == 0, 'Environment tried to process an invalid action'
-        self.state[action[0], action[1]] = self.turn
-        rewards = self.get_rewards()
-        self.turn *= -1
-        return self.state, rewards
+        """Perform an action and return the new state, reward, and a done boolean"""
+        row, col, mark = action[0], action[1], action[2]
+        assert self.state[row, col] == 0, 'Invalid coordinates'
+        assert mark in [1, -1], 'Mark not recognized'
+        self.state[row, col] = mark
+        reward = self.get_rewards(mark)
+        return self.state, reward
+
+    def is_done(self):
+        """Check if the game is completed"""
+        done = False
+        if self.get_rewards(1) or self.is_full():
+            done = True
+        return done
 
 
 class Agent():
-    """AlphaToe"""
+    """AlphaToe Q-Learning agent"""
 
-    def __init__(self, mark, state=np.zeros((3, 3))):
-        """Spawn a q-learning agent. Must provide the X/O mark (+/- 1). Current state is
-        optional and will default to an empty board
-        """
-        self.mark = mark
-        self.state = state
-        self.model = {1: {}, -1: {}} # States, actions, q-values
-        
+    def __init__(self, mark):
+        """Setup an agent and assign it X's or O's"""
+        self.Q = {} # States, actions, q-values
+        self.m = mark
+        self.s = np.zeros((3, 3))
+        self.s_prev = np.zeros((3, 3)) # Previous state
+        self.a = None # Previous action
+
     def reset(self):
-        """Resets back to a new game"""
+        """Reset to a new game"""
         self.state = np.zeros((3, 3))
-    
-    def evaluate(self, state=None, mark=None):
-        """Return a table of explored actions and q-values for the given state"""
-        if state is None: state = self.state
-        if mark is None: mark = self.mark
-        state_key = tuple(self.state.flatten())
-        return self.model[mark][state_key]
+
+    def get_mark(self):
+        """Get the agent's X/O mark"""
+        return self.m
+
+    def evaluate(self, state=None):
+        """Return Q(s) where s is a state. Filter out unavailable actions"""
+        if state is None: state = self.s
+        s = tuple(state.flatten())
+        try: Q_s = {a: q for a, q in self.Q[s].items() if a[2] == self.m}
+        except: Q_s = {} # No history
+        return Q_s
 
     def act(self, env, e=0.1):
-        """Take an action in the Environment. Larger epsilon values encourage exploration where random
-        actions are taken epsilon percent of the time
-        """
-        self.state = env.get_state()
-        m = self.mark
-        s = tuple(self.state.flatten())
-        choices = env.get_actions()
-        if e > random.uniform(0, 1): # Explore
-            a = random.choice(choices)
-        else: # Exploit
-            try:
-                Q = self.evaluate()
-                a = max(Q, key=Q.get)
-            except: a = random.choice(choices)
-        s1, R = env.step(a)
-        if m == 1: r = R[0]
-        else: r = R[1]
-        return s1, a, r
+        """Take an action in the Environment. Random actions are taken e percent of the time"""
+        self.s[:] = env.get_state()
+        actions = env.get_actions(self.m)
+        if e > random.uniform(0, 1):
+            print('Randomly exploring other options')
+            a = random.choice(actions)  # Explore
+        else:
+            Q_s = self.evaluate()
+            if Q_s:
+                print('Taking the greedy route')
+                a = max(Q_s, key=Q_s.get) # Enhance
+            else:
+                print('No history. Taking a random action')
+                a = random.choice(actions) # No exp
+        s1, r = env.step(a)
+        s = tuple(self.s.flatten())
+        if s not in self.Q: self.Q[s] = {}
+        if a not in self.Q[s]: self.Q[s].update({a: 0})
+        self.s_prev[:] = self.s
+        self.s[:] = s1
+        self.a = a
+        return r
 
-    def observe(self, s1, a, r, lr=0.3, y=0.5):
-        """"""
-        m = self.mark
-        s = tuple(self.state.flatten())
-        s1_key = tuple(s1.flatten())
-        if s1_key not in self.model[m]:
-            self.model[m][s1_key] = {}
-        Q = self.evaluate(s1)
-        try: q_next = max(Q.values())
-        except: q_next = 0
-        try: q_curr = self.model[m][s][a]
-        except: q_curr = 0
-        self.model[m][s][a] = q_curr + lr * (r + (y * q_next) - q_curr)
+    def observe(self, r, lr=0.3, y=0.5):
+        """Observe rewards and update Q for the previous move"""
+        if self.a is None: return # No action to observe
+        Q_s = self.evaluate(self.s_prev)
+        Q_s1 = self.evaluate(self.s)
+        q, q1 = 0, 0
+        if Q_s: q = max(Q_s.values())
+        if Q_s1: q1 = max(Q_s1.values())
+        s = tuple(self.s_prev.flatten())
+        self.Q[s][self.a] = q + lr * (r + (y * q1) - q)
 
 
 class Human():
