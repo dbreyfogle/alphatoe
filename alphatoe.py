@@ -172,9 +172,9 @@ class Human():
         env.display()
         r = None
         while True:
-            row = raw_input('Row #: ')
+            row = input('Row #: ')
             if row == 'q': sys.exit()
-            col = raw_input('Column #: ')
+            col = input('Column #: ')
             if col == 'q': sys.exit()
             try:
                 _, r = env.step((int(row), int(col), self.m))
@@ -231,8 +231,8 @@ if __name__ == '__main__':
     atoe_wins, your_wins = 0, 0
     for i in range(n_games):
         while True:
+            print('Q-values:', sorted(atoe.evaluate(env.get_state()).items()))
             r = atoe.act(env, e)
-            print('Q-values:', sorted(atoe.evaluate(atoe.s_prev).items()))
             atoe.observe(r, lr)
             if env.is_done():
                 env.display()
