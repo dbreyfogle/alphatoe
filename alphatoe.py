@@ -5,6 +5,12 @@ import random
 import pickle
 import sys
 import math
+import argparse
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-t', '--train', action='store_true', help='train the model')
+args = parser.parse_args()
 
 
 class Environment():
@@ -34,7 +40,7 @@ class Environment():
           *---*---*---*
         """
         to_txt = {0: ' ', 1: 'X', -1: 'O'}
-        print('    0   1   2')
+        print('\n    0   1   2')
         print('  *---*---*---*')
         for row in range(3):
             row_str = '{} | '.format(row)
@@ -109,7 +115,7 @@ class Agent():
     def save_model(self, path):
         """Save the model to a pickle file at the path"""
         with open(path, 'wb') as fp:
-            pickle.dump(self.Q, fp, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(self.Q, fp)
 
     def load_model(self, path):
         """Load a model from a pickle file at the path"""
@@ -126,11 +132,13 @@ class Agent():
         self.m = mark
 
     def evaluate(self, state=None):
-        """Return Q(s). Filter out unavailable actions"""
+        """Return Q(s) as an array. Filter out unavailable actions"""
         if state is None: state = self.s
         s = tuple(state.flatten())
-        try: Q_s = {a: q for a, q in self.Q[s].items() if a[2] == self.m}
-        except: Q_s = {} # No history
+        try:
+            d = {a: q for a, q in self.Q[s].items() if a[2] == self.m}
+            Q_s = np.array(d.items())
+        except: Q_s = None # No history
         return Q_s
 
     def act(self, env, e=0.3):
@@ -140,7 +148,9 @@ class Agent():
         a = random.choice(actions) # Explore
         if e < random.uniform(0, 1):
             Q_s = self.evaluate()
-            if Q_s: a = max(Q_s, key=Q_s.get) # Enhance
+            if Q_s is not None:
+                np.random.shuffle(Q_s) # In case of multiple maximums
+                a = Q_s[np.argmax(Q_s[:, 1])][0] # Enhance
         s1, r = env.step(a)
         s = tuple(self.s.flatten())
         if s not in self.Q: self.Q[s] = {}
@@ -155,7 +165,7 @@ class Agent():
         s = tuple(self.s_prev.flatten())
         q, q1 = self.Q[s][self.a], 0
         Q_s1 = self.evaluate(self.s)
-        if Q_s1: q1 = max(Q_s1.values())
+        if Q_s1 is not None: q1 = Q_s1[np.argmax(Q_s1[:, 1])][1]
         self.Q[s][self.a] = q + lr * (r + (y * q1) - q)
 
 
@@ -186,70 +196,75 @@ class Human():
 if __name__ == '__main__':
 
     # Training
-    env = Environment()
-    a1 = Agent(1)
-    a2 = Agent(-1)
-    n_games = 100000
-    e = 0.3 # Epsilon
-    y = 0.5 # Gamma
-    a1_wins, a2_wins = 0, 0
-    for i in range(n_games):
-        if i % 10000 == 0: print('Training run {} of {}'.format(i, n_games))
-        lr = 0.7 * math.exp(-1.5e-5 * i) # Learning rate (decaying)
-        while True:
-            r = a1.act(env, e)
-            a1.observe(r, lr, y)
-            a2.observe(-r, lr, y)
-            if env.is_done():
-                a1_wins += r
-                env.reset()
-                a1.reset()
-                a2.reset()
-                break
-            r = a2.act(env, e)
-            a2.observe(r, lr, y)
-            a1.observe(-r, lr, y)
-            if env.is_done():
-                a2_wins += r
-                env.reset()
-                a1.reset()
-                a2.reset()
-                break
-    print('a1 wins: {}, a2 wins: {}, Ties: {}'.format(a1_wins, a2_wins, n_games - (a1_wins + a2_wins)))
-    a1.save_model('model.pkl')
+    if args.train:
+        env = Environment()
+        a1 = Agent(1)
+        a2 = Agent(-1)
+        n_games = 100000
+        e = 0.3 # Epsilon
+        y = 0.5 # Gamma
+        a1_wins, a2_wins = 0, 0
+        for i in range(n_games):
+            if i % 10000 == 0: print('Training run {} of {}'.format(i, n_games))
+            lr = 0.7 * math.exp(-1.5e-5 * i) # Learning rate (decaying)
+            while True:
+                r = a1.act(env, e)
+                a1.observe(r, lr, y)
+                a2.observe(-r, lr, y)
+                if env.is_done():
+                    a1_wins += r
+                    env.reset()
+                    a1.reset()
+                    a2.reset()
+                    break
+                r = a2.act(env, e)
+                a2.observe(r, lr, y)
+                a1.observe(-r, lr, y)
+                if env.is_done():
+                    a2_wins += r
+                    env.reset()
+                    a1.reset()
+                    a2.reset()
+                    break
+        print('a1 wins: {}, a2 wins: {}, Ties: {}'.format(a1_wins, a2_wins, n_games - a1_wins + a2_wins))
+        a1.save_model('model.pkl')
 
     # Interactive
-    env = Environment()
-    you = Human(-1)
-    atoe = Agent(1)
-    atoe.load_model('model.pkl')
-    n_games = 3
-    print('Best of {}. Good luck!'.format(n_games))
-    e = 0 # Epsilon
-    lr = 0.2 # Learning rate
-    y = 0.5 # Gamma
-    atoe_wins, your_wins = 0, 0
-    for i in range(n_games):
-        while True:
-            print('Q-values:', sorted(atoe.evaluate(env.get_state()).items()))
-            r = atoe.act(env, e)
-            atoe.observe(r, lr)
-            if env.is_done():
-                env.display()
-                if r: print('AlphaToe won!')
-                else: print('Tie game.')
-                atoe_wins += r
-                env.reset()
-                atoe.reset()
-                break
-            r = you.act(env)
-            atoe.observe(r, lr)
-            if env.is_done():
-                env.display()
-                if r: print('You won!')
-                else: print('Tie game.')
-                your_wins += r
-                env.reset()
-                atoe.reset()
-                break
-    print('Your wins: {}, AlphaToe wins: {}, Ties: {}'.format(your_wins, atoe_wins, (n_games - (atoe_wins + your_wins))))
+    else:
+        env = Environment()
+        you = Human(-1)
+        atoe = Agent(1)
+        atoe.load_model('model.pkl')
+        n_games = 5
+        print('Best of {} against AlphaToe. Good luck!'.format(n_games))
+        e = 0 # Epsilon
+        lr = 0.2 # Learning rate
+        y = 0.5 # Gamma
+        atoe_wins, your_wins = 0, 0
+        for i in range(n_games):
+            if atoe_wins > (n_games / 2) or your_wins > (n_games / 2): break
+            while True:
+                print('\nQ(s):')
+                print(atoe.evaluate(env.get_state()))
+                r = atoe.act(env, e)
+                atoe.observe(r, lr)
+                if env.is_done():
+                    env.display()
+                    if r: print('AlphaToe won!')
+                    else: print('Tie game!')
+                    atoe_wins += r
+                    print('Your wins: {}, AlphaToe wins: {}'.format(your_wins, atoe_wins))
+                    env.reset()
+                    atoe.reset()
+                    break
+                r = you.act(env)
+                atoe.observe(r, lr)
+                if env.is_done():
+                    env.display()
+                    if r: print('You won!')
+                    else: print('Tie game!')
+                    your_wins += r
+                    print('Your wins: {}, AlphaToe wins: {}'.format(your_wins, atoe_wins))
+                    env.reset()
+                    atoe.reset()
+                    break
