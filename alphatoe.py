@@ -2,6 +2,8 @@
 
 import numpy as np
 import random
+import math
+import pickle
 
 
 class Environment():
@@ -60,7 +62,7 @@ class Environment():
         return actions
 
     def get_rewards(self, mark):
-        """Return rewards for the player given the current state"""
+        """Return rewards for the player in the current state"""
         assert mark in [1, -1], 'Mark not recognized'
         goal = 3 * mark
         for i in range(3):
@@ -75,7 +77,7 @@ class Environment():
         return 0
 
     def step(self, action):
-        """Perform an action and return the new state, reward, and a done boolean"""
+        """Perform an action and return the new state and rewards"""
         row, col, mark = action[0], action[1], action[2]
         assert self.state[row, col] == 0, 'Invalid coordinates'
         assert mark in [1, -1], 'Mark not recognized'
@@ -84,7 +86,7 @@ class Environment():
         return self.state, reward
 
     def is_done(self):
-        """Check if the game is completed"""
+        """Check if the game is finished"""
         done = False
         if self.get_rewards(1) or self.is_full():
             done = True
@@ -104,14 +106,30 @@ class Agent():
 
     def reset(self):
         """Reset to a new game"""
-        self.state = np.zeros((3, 3))
+        self.s = np.zeros((3, 3))
+        self.s_prev = np.zeros((3, 3))
+        self.a = None
+
+    def save_model(self, path):
+        """Save the model to a .json file at the chosen path"""
+        with open(path, 'wb') as fp:
+            pickle.dump(self.Q, fp, protocol=pickle.HIGHEST_PROTOCOL)
+
+    def load_model(self, path):
+        """Load a model from a .json file at the path"""
+        with open(path, 'rb') as fp:
+            self.Q = pickle.load(fp)
 
     def get_mark(self):
-        """Get the agent's X/O mark"""
+        """Get the X/O mark"""
         return self.m
 
+    def set_mark(self, mark):
+        """Set X or O"""
+        self.m = mark
+
     def evaluate(self, state=None):
-        """Return Q(s) where s is a state. Filter out unavailable actions"""
+        """Return Q(s). Filter out unavailable actions"""
         if state is None: state = self.s
         s = tuple(state.flatten())
         try: Q_s = {a: q for a, q in self.Q[s].items() if a[2] == self.m}
@@ -119,20 +137,17 @@ class Agent():
         return Q_s
 
     def act(self, env, e=0.1):
-        """Take an action in the Environment. Random actions are taken e percent of the time"""
+        """Take an action in the Environment and return rewards. Random actions are taken e percent of the time"""
         self.s[:] = env.get_state()
         actions = env.get_actions(self.m)
         if e > random.uniform(0, 1):
-            print('Randomly exploring other options')
             a = random.choice(actions)  # Explore
         else:
             Q_s = self.evaluate()
             if Q_s:
-                print('Taking the greedy route')
                 a = max(Q_s, key=Q_s.get) # Enhance
             else:
-                print('No history. Taking a random action')
-                a = random.choice(actions) # No exp
+                a = random.choice(actions) # Explore
         s1, r = env.step(a)
         s = tuple(self.s.flatten())
         if s not in self.Q: self.Q[s] = {}
@@ -142,8 +157,8 @@ class Agent():
         self.a = a
         return r
 
-    def observe(self, r, lr=0.3, y=0.5):
-        """Observe rewards and update Q for the previous move"""
+    def observe(self, r, lr=0.2, y=0.3):
+        """Observe rewards and update Q for the previous action"""
         if self.a is None: return # No action to observe
         Q_s = self.evaluate(self.s_prev)
         Q_s1 = self.evaluate(self.s)
@@ -157,84 +172,103 @@ class Agent():
 class Human():
     """For playing against AlphaToe"""
 
-    def __init__(self):
-        """"""
-        mark = 0 # 'X' or 'O' preference
-        mark_str = input("X's or O's? ('X'/'O'): ").upper()
-        while mark == 0:
-            if mark_str.lower() == 'X': mark = 1
-            if mark_str.lower() == 'O': mark = -1
-            if mark == 0:
-                mark_str = input("Sorry, please enter 'X' or 'O': ").upper()
-        self.mark = mark
+    def __init__(self, mark):
+        """Assign X/O"""
+        self.m = mark
 
     def act(self, env):
-        """Ask for next move and update the board"""
+        """Ask for the next move and update the Environment"""
         env.display()
         print('Your turn:')
-        is_invalid = True
-        while is_invalid:
+        valid = False
+        while not valid:
             row = int(input('Row #: '))
             col = int(input('Column #: '))
             try:
-                if env.get_state[row, col] == 0: # Must exist and be empty
-                    is_invalid = False
+                if env.get_state()[row, col] == 0: # Must exist and be empty
+                    valid = True
             except:
-                print('Sorry, that spot is taken or out of bounds. Please try again:')
-        return (row, col)
-
-
-def play_round(p1, p2):
-    env = Environment(3)
-    p1_turn = True # Player one goes first
-
-    while True:
-        if p1_turn:
-            s1, r, d = env.step(p1.act(env))
-        else:
-            s1, r, d = env.step(p2.act(env))
-        p1_turn = not p1_turn
-
-        if env.has_winner():
-            env.draw_board()
-            if p1_turn:
-                p2.score += 1
-                X_winner = p2.is_X
-            else:
-                p1.score += 1
-                X_winner = p1.is_X
-            if X_winner:
-                print('X wins!')
-            else:
-                print('O wins!')
-            break
-
-        if env.is_full():
-            env.draw_board()
-            print('Tie game!')
-            break
-
-
-def play_set(p1, p2, size=3, n_rounds=3):
-
-    for i in range(n_rounds):
-        print('Round {} of {}:'.format(i+1,n_rounds))
-        # Alternate going first each round
-        if i%2 == 0:
-            play_round(p1, p2)
-        else:
-            play_round(p2, p1)
-
-        if p1.is_X:
-            print('X score: {}'.format(p1.score))
-            print('O score: {}'.format(p2.score))
-        else:
-            print('X score: {}'.format(p2.score))
-            print('O score: {}'.format(p1.score))
-    print('Game over!')
+                print('Sorry, that spot is unavailable. Try again:')
+        env.step((row, col, self.m))
 
 
 if __name__ == '__main__':
-    p1 = Human()
-    p2 = Agent(mark=-p1.mark)
-    play_set(p1, p2, n_rounds=3)
+#    n_games = 500000
+#    env = Environment()
+#    a1 = Agent(1)
+#    a2 = Agent(-1)
+#    a1_wins, a2_wins = 0, 0
+#    for i in range(n_games):
+#        lr = 0.5 * math.exp(-4.5e-6 * i)
+#        e = 0.2 * math.exp(-2e-6 * i)
+#        if a1_wins <= a2_wins:
+#            while True:
+#                a1.observe(a1.act(env, e))
+#                a2.observe(env.get_rewards(a2.get_mark()), lr)
+#                if env.is_done():
+#                    if env.get_rewards(1): a1_wins += 1
+#                    env.reset()
+#                    a1.reset()
+#                    a2.reset()
+#                    break
+#                a2.observe(a2.act(env, e))
+#                a1.observe(env.get_rewards(a1.get_mark()), lr)
+#                if env.is_done():
+#                    if env.get_rewards(1): a2_wins += 1
+#                    env.reset()
+#                    a1.reset()
+#                    a2.reset()
+#                    break
+#        elif a1_wins > a2_wins:
+#            while True:
+#                a2.observe(a2.act(env, e))
+#                a1.observe(env.get_rewards(a1.get_mark()), lr)
+#                if env.is_done():
+#                    if env.get_rewards(1): a2_wins += 1
+#                    env.reset()
+#                    a1.reset()
+#                    a2.reset()
+#                    break
+#                a1.observe(a1.act(env, e))
+#                a2.observe(env.get_rewards(a2.get_mark()), lr)
+#                if env.is_done():
+#                    if env.get_rewards(1): a1_wins += 1
+#                    env.reset()
+#                    a1.reset()
+#                    a2.reset()
+#                    break
+#    print('a1 wins: {}, a2 wins: {}, ties: {}'.format(a1_wins, a2_wins, (n_games - (a1_wins + a2_wins))))
+#    a1.Q.update(a2.Q)
+#    a1.save_model('model.pkl')
+
+    # Play against AlphaToe
+    n_games = 5
+    env = Environment()
+    atoe = Agent(1)
+    atoe.load_model('model.pkl')
+    me = Human(-1)
+    atoe_wins, your_wins = 0, 0
+    for i in range(n_games):
+        while True:
+            atoe.observe(atoe.act(env, e=0))
+            if env.is_done():
+                env.display()
+                if env.get_rewards(1):
+                    print('AlphaToe won')
+                    atoe_wins += 1
+                else: print('Tie game')
+                env.reset()
+                atoe.reset()
+                break
+            me.act(env)
+            atoe.observe(env.get_rewards(atoe.get_mark()))
+            if env.is_done():
+                env.display()
+                if env.get_rewards(1):
+                    print('You won')
+                    your_wins += 1
+                else: print('Tie game')
+                env.reset()
+                atoe.reset()
+                break
+    print('Your wins: {}, alphatoe wins: {}, ties: {}'.format(your_wins, atoe_wins, (n_games - (atoe_wins + your_wins))))
