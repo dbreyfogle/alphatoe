@@ -176,37 +176,37 @@ class Human():
 
 if __name__ == '__main__':
     
-    env = Environment()
-    a1 = Agent(1)
-    a2 = Agent(-1)
-    n_games = 75000
-    e = 0.5 # Epsilon
-    y = 0.5 # Gamma
-    a1_wins, a2_wins = 0, 0
-    for i in range(n_games):
-        if i % 5000 == 0: print('Training run {} of {}'.format(i, n_games))
-        lr = 0.7 * math.exp(-2e-5 * i) # Learning rate (decaying)
-        while True:
-            s1, r = a1.act(env, e)
-            if r: a1.observe(s1, r, lr, y)
-            a2.observe(s1, -r, lr, y)
-            if env.is_done():
-                a1_wins += r
-                env.reset()
-                a1.reset()
-                a2.reset()
-                break
-            s1, r = a2.act(env, e)
-            if r: a2.observe(s1, r, lr, y)
-            a1.observe(s1, -r, lr, y)
-            if env.is_done():
-                a2_wins += r
-                env.reset()
-                a1.reset()
-                a2.reset()
-                break
-    print('a1 wins: {}, a2 wins: {}, Ties: {}'.format(a1_wins, a2_wins, n_games - a1_wins + a2_wins))
-    a1.save_model('model.pkl')
+#     env = Environment()
+#     a1 = Agent(1)
+#     a2 = Agent(-1)
+#     n_games = 75000
+#     e = 0.5 # Epsilon
+#     y = 0.5 # Gamma
+#     a1_wins, a2_wins = 0, 0
+#     for i in range(n_games):
+#         if i % 5000 == 0: print('Training run {} of {}'.format(i, n_games))
+#         lr = 0.7 * math.exp(-2e-5 * i) # Learning rate (decaying)
+#         while True:
+#             s1, r = a1.act(env, e)
+#             if r: a1.observe(s1, r, lr, y)
+#             a2.observe(s1, -r, lr, y)
+#             if env.is_done():
+#                 a1_wins += r
+#                 env.reset()
+#                 a1.reset()
+#                 a2.reset()
+#                 break
+#             s1, r = a2.act(env, e)
+#             if r: a2.observe(s1, r, lr, y)
+#             a1.observe(s1, -r, lr, y)
+#             if env.is_done():
+#                 a2_wins += r
+#                 env.reset()
+#                 a1.reset()
+#                 a2.reset()
+#                 break
+#     print('a1 wins: {}, a2 wins: {}, Ties: {}'.format(a1_wins, a2_wins, n_games - a1_wins + a2_wins))
+#     a1.save_model('model.pkl')
 
     env = Environment()
     you = Human(-1)
