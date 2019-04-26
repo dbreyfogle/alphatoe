@@ -95,13 +95,11 @@ class Agent():
         self.Q = {} # States, actions, q-values
         self.m = mark
         self.s = np.zeros((3, 3))
-        self.s_prev = np.zeros((3, 3)) # Previous state
         self.a = None # Previous action
 
     def reset(self):
         """Reset to a new game"""
         self.s = np.zeros((3, 3))
-        self.s_prev = np.zeros((3, 3))
         self.a = None
 
     def save_model(self, path):
@@ -113,18 +111,6 @@ class Agent():
         """Load a model from a pickle file"""
         with open(path, 'rb') as fp:
             self.Q = pickle.load(fp)
-            
-    def reset_model(self):
-        """Reset the model"""
-        self.Q = {}
-
-    def get_mark(self):
-        """Get the X/O mark"""
-        return self.m
-
-    def get_state(self, mark):
-        """Get the state"""
-        return self.s
 
     def evaluate(self, state=None):
         """Return Q(s) as an array. Filter out unavailable actions"""
@@ -132,7 +118,7 @@ class Agent():
         s = tuple(state.flatten())
         try:
             l = [(a, q) for a, q in self.Q[s].items() if a[2] == self.m]
-            random.shuffle(l)
+            random.shuffle(l) # In case of multiple maximums
             Q_s = np.array(l)
         except: Q_s = None # No history
         return Q_s
@@ -143,7 +129,7 @@ class Agent():
         """
         self.s[:] = env.get_state()
         actions = env.get_actions(self.m)
-        a = random.choice(actions)
+        a = random.choice(actions) # Explore
         if e < random.uniform(0, 1):
             Q_s = self.evaluate()
             if Q_s is not None:
@@ -194,16 +180,15 @@ if __name__ == '__main__':
     a1 = Agent(1)
     a2 = Agent(-1)
     n_games = 75000
-    e1 = 0.5 # Epsilon
-    e2 = 0.5
+    e = 0.5 # Epsilon
     y = 0.5 # Gamma
     a1_wins, a2_wins = 0, 0
     for i in range(n_games):
         if i % 5000 == 0: print('Training run {} of {}'.format(i, n_games))
         lr = 0.7 * math.exp(-2e-5 * i) # Learning rate (decaying)
         while True:
-            s1, r = a1.act(env, e1)
-            if r: a1.observe(s1, r, lr ,y)
+            s1, r = a1.act(env, e)
+            if r: a1.observe(s1, r, lr, y)
             a2.observe(s1, -r, lr, y)
             if env.is_done():
                 a1_wins += r
@@ -211,7 +196,7 @@ if __name__ == '__main__':
                 a1.reset()
                 a2.reset()
                 break
-            s1, r = a2.act(env, e2)
+            s1, r = a2.act(env, e)
             if r: a2.observe(s1, r, lr, y)
             a1.observe(s1, -r, lr, y)
             if env.is_done():
@@ -230,7 +215,7 @@ if __name__ == '__main__':
     n_games = 3
     print('Best of {} against AlphaToe'.format(n_games))
     e = 0 # Epsilon
-    lr = 0.2 # Learning rate
+    lr = 0.3 # Learning rate
     y = 0.5 # Gamma
     atoe_wins, your_wins = 0, 0
     for i in range(n_games):
